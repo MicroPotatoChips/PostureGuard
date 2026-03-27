@@ -9,7 +9,6 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.components.containers.Landmark
-import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
@@ -101,31 +100,17 @@ class PoseAnalyzer(
 
         if (!isFrontMode) {
             // ================= 侧面模式（混合判据） =================
-            val leftEar2d = lm.getOrNull(7) ?: return onResult("请将侧身完整置于画面中", false, "左耳关键点缺失")
-            val rightEar2d = lm.getOrNull(8) ?: return onResult("请将侧身完整置于画面中", false, "右耳关键点缺失")
-            val leftShoulder2d = lm.getOrNull(11) ?: return onResult("请将侧身完整置于画面中", false, "左肩关键点缺失")
-            val rightShoulder2d = lm.getOrNull(12) ?: return onResult("请将侧身完整置于画面中", false, "右肩关键点缺失")
-            val leftHip2d = lm.getOrNull(23) ?: return onResult("请将侧身完整置于画面中", false, "左胯关键点缺失")
-            val rightHip2d = lm.getOrNull(24) ?: return onResult("请将侧身完整置于画面中", false, "右胯关键点缺失")
-
-            val leftEar3d = wlm.getOrNull(7) ?: return onResult("请将侧身完整置于画面中", false, "左耳3D关键点缺失")
-            val rightEar3d = wlm.getOrNull(8) ?: return onResult("请将侧身完整置于画面中", false, "右耳3D关键点缺失")
-            val leftShoulder3d = wlm.getOrNull(11) ?: return onResult("请将侧身完整置于画面中", false, "左肩3D关键点缺失")
-            val rightShoulder3d = wlm.getOrNull(12) ?: return onResult("请将侧身完整置于画面中", false, "右肩3D关键点缺失")
-            val leftHip3d = wlm.getOrNull(23) ?: return onResult("请将侧身完整置于画面中", false, "左胯3D关键点缺失")
-            val rightHip3d = wlm.getOrNull(24) ?: return onResult("请将侧身完整置于画面中", false, "右胯3D关键点缺失")
-
-            val leftScore = reliabilityScore(leftEar2d) + reliabilityScore(leftShoulder2d) + reliabilityScore(leftHip2d)
-            val rightScore = reliabilityScore(rightEar2d) + reliabilityScore(rightShoulder2d) + reliabilityScore(rightHip2d)
+            val leftScore = reliabilityScore(lm[7]) + reliabilityScore(lm[11]) + reliabilityScore(lm[23])
+            val rightScore = reliabilityScore(lm[8]) + reliabilityScore(lm[12]) + reliabilityScore(lm[24])
             val useLeft = leftScore >= rightScore
 
-            val ear = if (useLeft) leftEar3d else rightEar3d
-            val shoulder = if (useLeft) leftShoulder3d else rightShoulder3d
-            val hip = if (useLeft) leftHip3d else rightHip3d
+            val ear = if (useLeft) wlm[7] else wlm[8]
+            val shoulder = if (useLeft) wlm[11] else wlm[12]
+            val hip = if (useLeft) wlm[23] else wlm[24]
 
-            val ear2d = if (useLeft) leftEar2d else rightEar2d
-            val shoulder2d = if (useLeft) leftShoulder2d else rightShoulder2d
-            val hip2d = if (useLeft) leftHip2d else rightHip2d
+            val ear2d = if (useLeft) lm[7] else lm[8]
+            val shoulder2d = if (useLeft) lm[11] else lm[12]
+            val hip2d = if (useLeft) lm[23] else lm[24]
 
             if (!isReliable(ear2d) || !isReliable(shoulder2d) || !isReliable(hip2d)) {
                 onResult("请将侧身完整置于画面中", false, "关键点可信度低")
@@ -154,24 +139,19 @@ class PoseAnalyzer(
             debugStr = "夹角:${(emaSideAngle ?: sideAngle).toInt()}° 头前伸:${"%.2f".format(emaHeadForward ?: headForwardRatio)} 躯干前倾:${"%.2f".format(emaTrunkForward ?: trunkForwardRatio)}"
         } else {
             // ================= 正面模式 (比例归一化法) =================
-            val leftShoulder = lm.getOrNull(11) ?: return onResult("请保持上半身完整正对镜头", false, "左肩关键点缺失")
-            val rightShoulder = lm.getOrNull(12) ?: return onResult("请保持上半身完整正对镜头", false, "右肩关键点缺失")
-            val leftEar = lm.getOrNull(7)
-            val rightEar = lm.getOrNull(8)
-
             // 计算肩宽作为基准单位 (解决远近误差)
-            val shoulderWidth = hypot(leftShoulder.x() - rightShoulder.x(), leftShoulder.y() - rightShoulder.y())
+            val shoulderWidth = hypot(lm[11].x() - lm[12].x(), lm[11].y() - lm[12].y())
 
-            if (shoulderWidth < MIN_SHOULDER_WIDTH || !isReliable(leftShoulder) || !isReliable(rightShoulder)) {
+            if (shoulderWidth < MIN_SHOULDER_WIDTH || !isReliable(lm[11]) || !isReliable(lm[12])) {
                 onResult("请保持上半身完整正对镜头", false, "肩部关键点不稳定")
                 return
             }
 
             // 歪肩：y轴差 / 肩宽
-            val sDiffRatio = abs(leftShoulder.y() - rightShoulder.y()) / shoulderWidth
+            val sDiffRatio = abs(lm[11].y() - lm[12].y()) / shoulderWidth
             // 歪头：耳朵y轴差 / 肩宽
-            val eDiffRatio = if (isReliable(leftEar) && isReliable(rightEar)) {
-                abs(leftEar!!.y() - rightEar!!.y()) / shoulderWidth
+            val eDiffRatio = if (isReliable(lm[7]) && isReliable(lm[8])) {
+                abs(lm[7].y() - lm[8].y()) / shoulderWidth
             } else {
                 0f
             }
@@ -230,7 +210,7 @@ class PoseAnalyzer(
         return Math.toDegrees(acos(cosine).toDouble()).toFloat()
     }
 
-    private fun distance2D(a: NormalizedLandmark, b: NormalizedLandmark): Float {
+    private fun distance2D(a: Landmark, b: Landmark): Float {
         return hypot(a.x() - b.x(), a.y() - b.y())
     }
 
@@ -238,15 +218,15 @@ class PoseAnalyzer(
         return if (prev == null) now else prev * (1f - alpha) + now * alpha
     }
 
-    private fun reliabilityScore(lm: NormalizedLandmark?): Float {
-        val visibility = lm?.visibility()?.orElse(0f) ?: 0f
-        val presence = lm?.presence()?.orElse(0f) ?: 0f
+    private fun reliabilityScore(lm: Landmark): Float {
+        val visibility = lm.visibility().orElse(0f)
+        val presence = lm.presence().orElse(0f)
         return 0.6f * visibility + 0.4f * presence
     }
 
-    private fun isReliable(lm: NormalizedLandmark?): Boolean {
-        return (lm?.visibility()?.orElse(0f) ?: 0f) >= MIN_VISIBILITY &&
-            (lm?.presence()?.orElse(0f) ?: 0f) >= MIN_PRESENCE
+    private fun isReliable(lm: Landmark): Boolean {
+        return lm.visibility().orElse(0f) >= MIN_VISIBILITY &&
+            lm.presence().orElse(0f) >= MIN_PRESENCE
     }
 
     fun close() {
