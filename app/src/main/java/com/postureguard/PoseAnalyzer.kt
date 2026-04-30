@@ -25,15 +25,17 @@ class PoseAnalyzer(
 ) : ImageAnalysis.Analyzer {
 
     var isFrontMode: Boolean = false // 对应 MainActivity 的默认选择
+    @Volatile private var isClosed = false
     private var poseLandmarker: PoseLandmarker? = null
+    private var lastInferenceTimestampMs = 0L
 
-    // --- 算法阈值 (比例/角度) ---
-    private val THRESHOLD_SHOULDER_TILT = 0.10f // 肩膀高度差/肩宽
-    private val THRESHOLD_HEAD_TILT = 0.10f // 头部高度差/肩宽
-    private val THRESHOLD_SIDE_ANGLE = 142f // 驼背角度(越小越驼)
-    private val THRESHOLD_TORSO_TILT = 140f // 躯干前倾角度
+    // --- 算法阈值（比例/角度） ---
+    private val THRESHOLD_SHOULDER_TILT = 0.08f // 肩膀高度差/肩宽
+    private val THRESHOLD_HEAD_TILT = 0.06f // 头部高度差/肩宽
+    private val THRESHOLD_SIDE_ANGLE = 142f // 驼背角度（越小越驼）
+    private val THRESHOLD_TORSO_TILT = 160f // 躯干前倾角度
 
-    // --- 滤波平滑 (EMA) ---
+    // --- 滤波平滑（EMA） ---
     private var emaAngle: Float? = null
     private var emaTorso: Float? = null
 
@@ -44,9 +46,7 @@ class PoseAnalyzer(
     private var badPostureStartTime = 0L
     private var hasAlerted = false
 
-    private val mediaPlayer: MediaPlayer by lazy {
-        MediaPlayer.create(context, R.raw.sound).apply { isLooping = false }
-    }
+    private var mediaPlayer: MediaPlayer? = null
 
     init {
         setupPoseLandmarker()
@@ -67,26 +67,43 @@ class PoseAnalyzer(
     }
 
     override fun analyze(image: ImageProxy) {
-        val rotationDegrees = image.imageInfo.rotationDegrees
-        val bitmap = image.toBitmap()
+        if (isClosed) {
+            image.close()
+            return
+        }
 
-        // 关键：处理 Bitmap 旋转，确保 MediaPipe 看到的是正向的人
-        val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-        val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        try {
+            val rotationDegrees = image.imageInfo.rotationDegrees
+            val bitmap = image.toBitmap()
 
-        val mpImage = BitmapImageBuilder(rotatedBitmap).build()
-        poseLandmarker?.detectAsync(mpImage, SystemClock.uptimeMillis())
-        image.close()
+            // 关键：处理 Bitmap 旋转，确保 MediaPipe 看到的是正向人体。
+            val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+            val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+
+            val timestamp = SystemClock.uptimeMillis().let { now ->
+                if (now <= lastInferenceTimestampMs) lastInferenceTimestampMs + 1 else now
+            }
+            lastInferenceTimestampMs = timestamp
+
+            val mpImage = BitmapImageBuilder(rotatedBitmap).build()
+            poseLandmarker?.detectAsync(mpImage, timestamp)
+        } catch (_: Exception) {
+            // 吞掉单帧异常，避免分析链路崩溃。
+        } finally {
+            image.close()
+        }
     }
 
     private fun processPose(result: PoseLandmarkerResult) {
+        if (isClosed) return
+
         val landmarks = result.landmarks()
         val worldLandmarks = result.worldLandmarks()
 
         val lm = landmarks.firstOrNull()
         val wlm = worldLandmarks.firstOrNull()
         if (lm.isNullOrEmpty() || wlm.isNullOrEmpty()) {
-            onResult("未检测到人", false, "")
+            onResult("?????", false, "")
             return
         }
 
@@ -94,11 +111,11 @@ class PoseAnalyzer(
         var debugStr = ""
 
         if (!isFrontMode) {
-            // ================= 侧面模式 (3D 向量法) =================
+            // ================= 侧面模式（3D 向量法） =================
             val leftShoulder2d = lm.getOrNull(11)
             val rightShoulder2d = lm.getOrNull(12)
             if (leftShoulder2d == null || rightShoulder2d == null) {
-                onResult("请将上半身完整置于画面中", false, "肩部关键点缺失")
+                onResult("????????????", false, "???????")
                 return
             }
 
@@ -109,11 +126,11 @@ class PoseAnalyzer(
             val hip = (if (useLeft) wlm.getOrNull(23) else wlm.getOrNull(24))
 
             if (ear == null || shoulder == null || hip == null) {
-                onResult("请将侧身完整置于画面中", false, "侧面关键点缺失")
+                onResult("???????????", false, "???????")
                 return
             }
 
-            // 1) 3D 骨骼夹角 (耳-肩-胯)
+            // 1) 3D 骨骼夹角（耳-肩-胯）
             val angle = calculate3DAngle(ear, shoulder, hip)
             emaAngle = if (emaAngle == null) angle else emaAngle!! * 0.7f + angle * 0.3f
 
@@ -123,28 +140,28 @@ class PoseAnalyzer(
             val torsoTilt = abs(Math.toDegrees(atan2(dx.toDouble(), dy.toDouble()))).toFloat()
             emaTorso = if (emaTorso == null) torsoTilt else emaTorso!! * 0.7f + torsoTilt * 0.3f
 
-            if ((emaAngle ?: angle) < THRESHOLD_SIDE_ANGLE) issues.add("驼背")
-            if ((emaTorso ?: torsoTilt) < THRESHOLD_TORSO_TILT) issues.add("前倾")
+            if ((emaAngle ?: angle) < THRESHOLD_SIDE_ANGLE) issues.add("??")
+            if ((emaTorso ?: torsoTilt) < THRESHOLD_TORSO_TILT) issues.add("??")
 
-            debugStr = "角度:${(emaAngle ?: angle).toInt()}° 倾斜:${(emaTorso ?: torsoTilt).toInt()}°"
+            debugStr = "??:${(emaAngle ?: angle).toInt()}? ??:${(emaTorso ?: torsoTilt).toInt()}?"
         } else {
-            // ================= 正面模式 (比例归一化法) =================
+            // ================= 正面模式（比例归一化法） =================
             val leftShoulder = lm.getOrNull(11)
             val rightShoulder = lm.getOrNull(12)
             if (leftShoulder == null || rightShoulder == null) {
-                onResult("请保持正对镜头", false, "肩部关键点缺失")
+                onResult("???????", false, "???????")
                 return
             }
 
             val shoulderWidth = hypot(leftShoulder.x() - rightShoulder.x(), leftShoulder.y() - rightShoulder.y())
             if (shoulderWidth < 1e-4f) {
-                onResult("请靠近一点并保持上半身完整", false, "肩宽过小")
+                onResult("?????????????", false, "????")
                 return
             }
 
-            // 歪肩：y轴差 / 肩宽
+            // 歪肩：y 轴差 / 肩宽
             val sDiffRatio = abs(leftShoulder.y() - rightShoulder.y()) / shoulderWidth
-            // 歪头：耳朵y轴差 / 肩宽（耳朵关键点缺失则不判定歪头）
+            // 歪头：耳朵 y 轴差 / 肩宽（耳朵关键点缺失则不判定歪头）
             val leftEar = lm.getOrNull(7)
             val rightEar = lm.getOrNull(8)
             val eDiffRatio = if (leftEar != null && rightEar != null) {
@@ -153,17 +170,17 @@ class PoseAnalyzer(
                 0f
             }
 
-            if (sDiffRatio > THRESHOLD_SHOULDER_TILT) issues.add("歪肩")
-            if (eDiffRatio > THRESHOLD_HEAD_TILT) issues.add("歪头")
+            if (sDiffRatio > THRESHOLD_SHOULDER_TILT) issues.add("??")
+            if (eDiffRatio > THRESHOLD_HEAD_TILT) issues.add("??")
 
-            debugStr = "肩偏:${"%.2f".format(sDiffRatio)} 头偏:${"%.2f".format(eDiffRatio)}"
+            debugStr = "??:${"%.2f".format(sDiffRatio)} ??:${"%.2f".format(eDiffRatio)}"
         }
 
         // --- 状态判定逻辑 ---
         val now = SystemClock.elapsedRealtime()
         val currentState = if (issues.isEmpty()) "good" else "bad"
 
-        // 状态抖动保护：只有持续 1 秒的状态改变才生效
+        // 状态抖动保护：只有持续 1 秒的状态改变才生效。
         if (currentState != lastState) {
             if (lastStateTime == 0L) {
                 lastStateTime = now
@@ -185,8 +202,8 @@ class PoseAnalyzer(
         // --- 报警逻辑 ---
         if (lastState == "bad") {
             if (badPostureStartTime == 0L) badPostureStartTime = now
-            if ((now - badPostureStartTime) > 15000L && !hasAlerted) { // 15秒提醒
-                mediaPlayer.start()
+            if ((now - badPostureStartTime) > 15000L && !hasAlerted) { // 15 秒提醒
+                playAlertSound()
                 hasAlerted = true
             }
         } else {
@@ -195,9 +212,9 @@ class PoseAnalyzer(
         }
 
         val statusText = if (lastState == "good") {
-            "姿态良好 ✨"
+            "????"
         } else {
-            "${lastBadIssues.joinToString("/")} ⚠️"
+            "${lastBadIssues.joinToString("/")}"
         }
         onResult(statusText, lastState == "bad", debugStr)
     }
@@ -214,9 +231,33 @@ class PoseAnalyzer(
         return Math.toDegrees(acos(cosine).toDouble()).toFloat()
     }
 
+    private fun playAlertSound() {
+        val player = mediaPlayer ?: MediaPlayer.create(context, R.raw.sound)?.apply {
+            isLooping = false
+        }?.also {
+            mediaPlayer = it
+        } ?: return
+
+        runCatching {
+            if (player.isPlaying) {
+                player.seekTo(0)
+            } else {
+                player.start()
+            }
+        }
+    }
+
     fun close() {
+        isClosed = true
         poseLandmarker?.close()
-        if (mediaPlayer.isPlaying) mediaPlayer.stop()
-        mediaPlayer.release()
+        poseLandmarker = null
+
+        mediaPlayer?.let { player ->
+            runCatching {
+                if (player.isPlaying) player.stop()
+            }
+            player.release()
+        }
+        mediaPlayer = null
     }
 }
