@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private var isRunning = false
     private var lensFacing = CameraSelector.LENS_FACING_FRONT
     private lateinit var cameraExecutor: ExecutorService
+    private var cameraProvider: ProcessCameraProvider? = null
     private var analyzer: PoseAnalyzer? = null
 
     // 权限申请
@@ -51,7 +52,7 @@ class MainActivity : AppCompatActivity() {
 
         // 2. 初始化分析器 (带 Debug 回调)
         try {
-            analyzer = PoseAnalyzer(this) { status, isBad, debugInfo ->
+            analyzer = PoseAnalyzer(applicationContext) { status, isBad, debugInfo ->
                 runOnUiThread {
                     tvStatus.text = status
                     tvStatus.setTextColor(if (isBad) Color.parseColor("#EF4444") else Color.parseColor("#10B981"))
@@ -60,7 +61,7 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e("PostureGuard", "Analyzer init failed", e)
-            Toast.makeText(this, "模型初始化失败，请检查 assets 文件夹", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "模型初始化失败，请检查资源文件夹", Toast.LENGTH_LONG).show()
         }
 
         // 3. 模式选择 (正面/侧面)
@@ -94,9 +95,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startCamera() {
+        if (analyzer == null) {
+            Toast.makeText(this, "分析器未就绪，请重启应用后重试", Toast.LENGTH_LONG).show()
+            return
+        }
+
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+            val provider = try {
+                cameraProviderFuture.get().also { cameraProvider = it }
+            } catch (e: Exception) {
+                Log.e("PostureGuard", "Camera provider unavailable", e)
+                Toast.makeText(this, "相机初始化失败", Toast.LENGTH_SHORT).show()
+                return@addListener
+            }
 
             // 预览配置
             val preview = Preview.Builder().build().also {
@@ -115,21 +127,22 @@ class MainActivity : AppCompatActivity() {
             val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
             try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+                provider.unbindAll()
+                provider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
 
                 isRunning = true
                 btnToggle.text = "停止监控"
                 btnToggle.backgroundTintList = ContextCompat.getColorStateList(this, android.R.color.holo_red_light)
             } catch (exc: Exception) {
                 Log.e("PostureGuard", "Use case binding failed", exc)
+                Toast.makeText(this, "启动监控失败，请重试", Toast.LENGTH_SHORT).show()
             }
 
         }, ContextCompat.getMainExecutor(this))
     }
 
     private fun stopCamera() {
-        ProcessCameraProvider.getInstance(this).get().unbindAll()
+        cameraProvider?.unbindAll()
         isRunning = false
         btnToggle.text = "开始监控"
         btnToggle.backgroundTintList = ContextCompat.getColorStateList(this, android.R.color.holo_blue_dark)
@@ -138,6 +151,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        stopCamera()
+        cameraProvider = null
         super.onDestroy()
         cameraExecutor.shutdown()
         analyzer?.close()
