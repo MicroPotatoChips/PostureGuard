@@ -1,5 +1,6 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -36,7 +37,13 @@
             android:orientation="horizontal"
             android:layout_marginTop="8dp">
             <RadioButton android:id="@+id/rbSide" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="侧面" android:checked="true"/>
-            <RadioButton android:id="@+id/rbFront" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="正面" android:layout_marginStart="10dp"/>
+
+            <RadioButton
+                android:id="@+id/rbFront"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="正面" />
         </RadioGroup>
 
         <androidx.cardview.widget.CardView
@@ -53,7 +60,7 @@
                 android:gravity="center"
                 android:text="等待启动..."
                 android:textSize="22sp"
-                android:textColor="#9CA3AF" />
+                android:textColor="#9CAFA2" />
         </androidx.cardview.widget.CardView>
 
         <TextView
@@ -61,9 +68,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:text="Debug: 0.0"
+            android:text="调试信息：0.0"
             android:textSize="12sp"
-            android:textColor="#9CA3AF" />
+            android:textColor="#AD2394" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -91,4 +98,13 @@
                 android:contentDescription="切换摄像头" />
         </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="由 Digital Space 开发"
+        android:background="@drawable/bg_bottom_card"
+        android:textColor="#FF5722"
+        />
 </LinearLayout>
