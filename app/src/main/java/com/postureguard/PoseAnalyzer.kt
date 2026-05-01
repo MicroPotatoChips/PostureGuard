@@ -103,7 +103,7 @@ class PoseAnalyzer(
         val lm = landmarks.firstOrNull()
         val wlm = worldLandmarks.firstOrNull()
         if (lm.isNullOrEmpty() || wlm.isNullOrEmpty()) {
-            onResult("?????", false, "")
+            onResult("未检测到人", false, "")
             return
         }
 
@@ -115,7 +115,7 @@ class PoseAnalyzer(
             val leftShoulder2d = lm.getOrNull(11)
             val rightShoulder2d = lm.getOrNull(12)
             if (leftShoulder2d == null || rightShoulder2d == null) {
-                onResult("????????????", false, "???????")
+                onResult("未检测到人", false, "")
                 return
             }
 
@@ -126,7 +126,7 @@ class PoseAnalyzer(
             val hip = (if (useLeft) wlm.getOrNull(23) else wlm.getOrNull(24))
 
             if (ear == null || shoulder == null || hip == null) {
-                onResult("???????????", false, "???????")
+                onResult("请将上半身完整置于画面中", false, "肩部关键点缺失")
                 return
             }
 
@@ -140,22 +140,22 @@ class PoseAnalyzer(
             val torsoTilt = abs(Math.toDegrees(atan2(dx.toDouble(), dy.toDouble()))).toFloat()
             emaTorso = if (emaTorso == null) torsoTilt else emaTorso!! * 0.7f + torsoTilt * 0.3f
 
-            if ((emaAngle ?: angle) < THRESHOLD_SIDE_ANGLE) issues.add("??")
-            if ((emaTorso ?: torsoTilt) < THRESHOLD_TORSO_TILT) issues.add("??")
+            if ((emaAngle ?: angle) < THRESHOLD_SIDE_ANGLE) issues.add("⚠️驼背")
+            if ((emaTorso ?: torsoTilt) < THRESHOLD_TORSO_TILT) issues.add("⚠️背前倾")
 
-            debugStr = "??:${(emaAngle ?: angle).toInt()}? ??:${(emaTorso ?: torsoTilt).toInt()}?"
+            debugStr = "角度:${(emaAngle ?: angle).toInt()}° 倾斜:${(emaTorso ?: torsoTilt).toInt()}°"
         } else {
             // ================= 正面模式（比例归一化法） =================
             val leftShoulder = lm.getOrNull(11)
             val rightShoulder = lm.getOrNull(12)
             if (leftShoulder == null || rightShoulder == null) {
-                onResult("???????", false, "???????")
+                onResult("请保持正对镜头", false, "肩部关键点缺失")
                 return
             }
 
             val shoulderWidth = hypot(leftShoulder.x() - rightShoulder.x(), leftShoulder.y() - rightShoulder.y())
             if (shoulderWidth < 1e-4f) {
-                onResult("?????????????", false, "????")
+                onResult("请保持正对镜头", false, "肩宽过小")
                 return
             }
 
@@ -170,10 +170,10 @@ class PoseAnalyzer(
                 0f
             }
 
-            if (sDiffRatio > THRESHOLD_SHOULDER_TILT) issues.add("??")
-            if (eDiffRatio > THRESHOLD_HEAD_TILT) issues.add("??")
+            if (sDiffRatio > THRESHOLD_SHOULDER_TILT) issues.add("⚠️歪肩")
+            if (eDiffRatio > THRESHOLD_HEAD_TILT) issues.add("⚠️歪头")
 
-            debugStr = "??:${"%.2f".format(sDiffRatio)} ??:${"%.2f".format(eDiffRatio)}"
+            debugStr = "歪肩:${"%.2f".format(sDiffRatio)} 头偏:${"%.2f".format(eDiffRatio)}"
         }
 
         // --- 状态判定逻辑 ---
@@ -212,7 +212,7 @@ class PoseAnalyzer(
         }
 
         val statusText = if (lastState == "good") {
-            "????"
+            "😘姿态良好"
         } else {
             "${lastBadIssues.joinToString("/")}"
         }
