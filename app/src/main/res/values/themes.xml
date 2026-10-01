@@ -1,9 +1,29 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.PostureGuard" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+<resources>
+    <style name="Base.Theme.PostureGuard" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/mint_primary</item>
+        <item name="colorOnPrimary">@color/surface</item>
+        <item name="colorSecondary">@color/mint_primary</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/mint_canvas</item>
+        <item name="android:navigationBarColor">@color/mint_canvas</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">@color/mint_canvas</item>
+        <item name="android:fontFamily">sans</item>
     </style>
-
     <style name="Theme.PostureGuard" parent="Base.Theme.PostureGuard" />
+    <style name="Posture.Label" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/ink_muted</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+    <style name="Posture.MetricValue" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">24sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:layout_marginTop">6dp</item>
+    </style>
 </resources>

@@ -1,111 +1,92 @@
 # PostureGuard / 姿态守护
 
-PostureGuard is an Android app that monitors sitting posture in real time using MediaPipe pose landmarks and provides visual/audio reminders when posture degrades.
+Android 本地坐姿监测应用，使用 Kotlin、CameraX 和 MediaPipe Pose Landmarker。新版采用浅色薄荷绿界面，支持个人校准、实时姿态指标和持续偏离提醒。
 
-PostureGuard 是一个基于 Android 的实时坐姿监测应用，使用 MediaPipe 姿态关键点进行识别，并在姿态持续不良时提供界面与声音提醒。
+## 改版功能
 
----
+- 薄荷绿卡片界面、坐姿舒适度圆环与明确的取景引导。
+- 正面肩颈平衡、侧面头背姿态两种监测模式，支持切换前后镜头。
+- 至少三秒个人坐姿校准，显示实时姿态指标与关键点可信度。
+- 仅统计有效观测时间和良好占比，支持声音提醒开关。
+- 低置信度过滤、按时间平滑、阈值滞回和异常持续时间确认。
 
-## Features / 功能
+**验证状态：** 当前改版已完成语法、XML 和资源引用的静态检查，尚未编译或进行设备测试。详细范围见 [检查报告](CHECK_REPORT.md)。
 
-### English
-- Real-time posture analysis from camera frames.
-- Front-view mode: detects shoulder tilt and head tilt.
-- Side-view mode: detects hunching / forward-head and trunk lean.
-- Smoothing + debounce to reduce jitter and false alerts.
-- Audio alert after prolonged bad posture.
+## 使用
 
-### 中文
-- 基于摄像头画面的实时姿态分析。
-- 正面模式：检测歪肩、歪头。
-- 侧面模式：检测驼背/头前伸、躯干前倾。
-- 使用平滑与去抖逻辑，减少抖动和误报。
-- 不良姿态持续一段时间后触发语音提醒。
+1. 选择正面或侧面模式，启动监测并允许相机权限。
+2. 正面模式需要双耳、双肩入镜；侧面模式需要同侧的耳朵、肩膀和髋部入镜。
+3. 稳定放置手机，让镜头接近肩部高度。保持自然坐直，点击“校准坐姿”。
+4. 校准需要至少 3 秒、20 帧清晰且稳定的姿态。移动、遮挡或明显倾斜会重新计时。
+5. 姿态持续偏离时显示纠正建议，稳定异常状态持续 15 秒后提醒一次。声音可关闭。
 
----
+切换模式、镜头或身体观察侧会清除个人基准，需要重新校准；暂停保留当前基准，重新开始监测会清空本次统计。退出页面会暂停相机。校准只保留在当前 Activity 生命周期内，模式和声音偏好保存在本机。
 
-## Tech Stack / 技术栈
+画面仅在设备上分析，不保存、不上传。
 
-### English
-- Kotlin
-- Android CameraX
-- Google MediaPipe Tasks (Pose Landmarker)
+## 新算法
 
-### 中文
-- Kotlin
-- Android CameraX
-- Google MediaPipe Tasks（Pose Landmarker）
+- **可靠性过滤**：关键点的 visibility 与 presence 均需至少 0.65，且位置必须在画面内。关键点缺失、画面太小或身体方向不适合当前模式时，显示取景引导。
+- **比例修正**：将单独归一化的 x、y 坐标换算为相同尺度，避免画面长宽比影响角度。
+- **正面模式**：计算有符号的肩部、头部倾斜角，相对个人基准判定。通用进入阈值分别为 5°、8°。
+- **侧面模式**：按同侧耳朵、肩膀和髋部的最低置信度选择观察侧；头前伸需水平位移和颈部弯折两个指标同时超限。水平位移按躯干长度归一化，通用阈值为 0.22，颈部弯折阈值为 25°；躯干倾斜阈值为 15°。校准后使用相对基准偏差。
+- **平滑和恢复**：使用时间相关 EMA（350 毫秒时间常数），退出阈值为进入阈值的 75%。异常确认需 1.2 秒，恢复确认需 0.8 秒。
+- **计时重置**：低置信度、人物离开画面、采样间隔超过 1 秒、暂停或切换模式时，清空异常计时与滤波状态，避免旧结果触发提醒。
+- **个人校准**：对稳定样本取中位数。通用合理范围检查用于拒绝明显偏斜的校准姿态；这些数值仍是启发式阈值。
+- **舒适度和统计**：舒适度分数是基准偏离程度的 UI 表达；有效监测与良好占比仅统计清晰、可判断的观测时间，不包括校准和取景时间。
 
----
+原实现依赖三维估计角度。新版使用经画面比例修正的二维几何与个人基准，使用户在固定机位下更容易理解和校准；尚未通过实际数据集比较证明识别准确率提升。
 
-## Project Structure / 项目结构
+MediaPipe 的坐标与运行模式参考[官方 Android 指南](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker/android)。所有帧在单独的分析线程中同步处理，相机使用 KEEP_ONLY_LATEST 丢弃积压帧。
+
+## 代码结构
 
 ```text
 app/src/main/java/com/postureguard/
-  MainActivity.kt      # Camera, UI, mode switching / 相机与界面控制
-  PoseAnalyzer.kt      # Core posture algorithm / 姿态算法核心
+  MainActivity.kt    # 界面、相机、权限、音频、会话与统计
+  PoseAnalyzer.kt    # MediaPipe 帧处理与资源释放
+  PostureEngine.kt   # 独立几何、校准、平滑和状态判定
+  ScoreRingView.kt   # 舒适度圆环
+app/src/main/res/
+  layout/activity_main.xml
+  drawable/         # 本地矢量插画与图标
+  values/           # 薄荷绿主题与文案
+tools/check_source.py # 无编译的语法、XML 与资源引用检查
+CHECK_REPORT.md      # 本次检查结果与范围
 ```
 
----
+## 静态检查（不编译）
 
-## How to Run / 运行方式
+基础 XML 与资源检查只需要 Python：
 
-### English
-1. Open the project in Android Studio.
-2. Ensure `pose_landmarker_lite.task` exists in `app/src/main/assets/`.
-3. Build and run on an Android device.
-4. Grant camera permission.
-5. Select front/side mode and start monitoring.
+```powershell
+python tools/check_source.py
+git diff --check
+```
 
-### 中文
-1. 使用 Android Studio 打开项目。
-2. 确认 `app/src/main/assets/` 下存在 `pose_landmarker_lite.task`。
-3. 编译并运行到 Android 设备。
-4. 授予相机权限。
-5. 选择正面/侧面模式并开始监控。
+Kotlin 语法解析可使用 tree-sitter 和 tree-sitter-kotlin 的二进制 wheel。安装后即可同时检查 Kotlin 语法：
 
----
+```powershell
+python -m pip install --only-binary=:all: tree-sitter tree-sitter-kotlin
+python tools/check_source.py
+```
 
-## Algorithm Notes / 算法说明
+如果将解析器安装在单独目录，可传入目录路径：
 
-### English
-- The analyzer first checks landmark reliability (visibility/presence).
-- Front mode uses normalized shoulder/head roll ratios.
-- Side mode combines:
-  - 3D ear-shoulder-hip angle,
-  - 2D normalized forward-head ratio,
-  - 2D normalized trunk-lean ratio.
-- EMA smoothing and 1-second state debounce improve stability.
+```powershell
+python tools/check_source.py --parser-path <解析器安装目录>
+```
 
-### 中文
-- 识别前先进行关键点可靠性判断（visibility/presence）。
-- 正面模式使用归一化的肩部/头部偏斜比例。
-- 侧面模式结合以下指标：
-  - 3D 耳-肩-胯夹角，
-  - 2D 头前伸归一化比例，
-  - 2D 躯干前倾归一化比例。
-- 通过 EMA 平滑与 1 秒状态去抖提升稳定性。
+脚本不调用 Gradle，不做 Kotlin 类型检查，不运行 Android 应用。详细结果见 [CHECK_REPORT.md](CHECK_REPORT.md)。
 
----
+## Android 项目
 
-## Roadmap / 后续计划
+项目保留原有构建配置和依赖版本：AGP 9.1.0、Gradle 9.3.1、Java 21、Android SDK 36.1、CameraX 1.5.3 和 MediaPipe 0.10.32。模型文件已包含在 `app/src/main/assets/pose_landmarker_lite.task`。
 
-### English
-- Per-user calibration for thresholds.
-- Better UX for guidance and recovery actions.
-- Historical trend reports and weekly summaries.
+在 Android Studio 中打开仓库根目录，并准备 Java 21、Android SDK 36.1 与 Android 8.0（API 26）或更高版本的设备。模型已随源码提供。
 
-### 中文
-- 加入个体化阈值校准。
-- 优化纠正引导与恢复动作提示。
-- 增加历史趋势统计与周报。
+界面实际显示、相机兼容性、音频和识别阈值仍需后续设备验证。
 
----
+## English
 
-## License / 许可证
-
-### English
-No license file is currently included. Add one before public distribution.
-
-### 中文
-当前仓库未包含许可证文件，公开发布前建议补充。
+PostureGuard monitors sitting posture on-device. The refreshed mint interface provides front/side monitoring, a three-second personal calibration, confidence-gated 2D metrics, time-based smoothing, hysteresis, sustained-state confirmation, and an optional reminder after 15 seconds of confirmed deviation. Source checks are documented in CHECK_REPORT.md; no build or device test was performed.
