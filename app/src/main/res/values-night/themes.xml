@@ -1,7 +1,4 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Base.Theme.PostureGuard" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Customize your dark theme here. -->
-        <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
-    </style>
+<resources>
+    <!-- The requested mint design uses the same accessible light palette in both system modes. -->
+    <style name="Theme.PostureGuard" parent="Base.Theme.PostureGuard" />
 </resources>

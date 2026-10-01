@@ -1,5 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
+    <color name="mint_primary">#167D64</color>
+    <color name="mint_light">#E6F3ED</color>
+    <color name="mint_canvas">#F5F8F5</color>
+    <color name="ink">#173E34</color>
+    <color name="ink_muted">#61796F</color>
+    <color name="line">#DCE8E0</color>
+    <color name="warning">#B46A21</color>
+    <color name="warning_light">#FFF1DF</color>
+    <color name="surface">#FFFFFF</color>
 </resources>
